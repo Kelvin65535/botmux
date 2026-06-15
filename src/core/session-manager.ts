@@ -30,6 +30,8 @@ import { usageLimitStateKey } from '../utils/cli-usage-limit.js';
 import { t, localeForBot, type Locale } from '../i18n/index.js';
 import { parseWorkingDirList } from '../utils/working-dir.js';
 import { resolveRole } from './role-resolver.js';
+import { renderSkillCatalogBlock } from './skills/prompt.js';
+import type { SessionSkillManifest } from './skills/types.js';
 
 function sessionCreatedAtMs(session: { createdAt?: string }): number {
   return session.createdAt ? (Date.parse(session.createdAt) || Date.now()) : Date.now();
@@ -257,7 +259,7 @@ export function buildNewTopicPrompt(
   botIdentity?: { name?: string; openId?: string },
   locale?: Locale,
   sender?: ResolvedSender,
-  opts?: { larkAppId?: string; chatId?: string },
+  opts?: { larkAppId?: string; chatId?: string; skillManifest?: SessionSkillManifest },
 ): string {
   const adapter = createCliAdapterSync(cliId, cliPathOverride);
   // Non-Claude CLIs receive the botmux routing hints inline via the prompt
@@ -342,6 +344,8 @@ export function buildNewTopicPrompt(
   // and session ID via system prompt, so skip those blocks here.
   if (mentionBlock) parts.push(mentionBlock);
   if (botBlock) parts.push(botBlock);
+  const skillBlock = renderSkillCatalogBlock(opts?.skillManifest);
+  if (skillBlock) parts.push(skillBlock);
 
   return parts.join('\n\n');
 }

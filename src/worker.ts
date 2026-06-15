@@ -3580,6 +3580,7 @@ function spawnCli(cfg: Extract<DaemonToWorker, { type: 'init' }>): void {
     locale: cfg.locale,
     model: ttadkGateway ? undefined : cfg.model,
     disableCliBypass: cfg.disableCliBypass === true,
+    skillPluginDir: cfg.skillPluginDir,
   });
 
   // Extra args from env (CLI_DISABLE_DEFAULT_ARGS is removed — adapters own their defaults)
@@ -3746,6 +3747,7 @@ function spawnCli(cfg: Extract<DaemonToWorker, { type: 'init' }>): void {
           hidePaths: cfg.sandboxHidePaths ?? [],
           authPaths: cliAdapter.authPaths,
           extraExecPaths: cliAdapter.sandboxExtraExecPaths?.(),
+          readonlyRoots: cfg.skillReadonlyRoots ?? [],
         });
         if (sbx) {
           spawnBin = sbx.bin;
