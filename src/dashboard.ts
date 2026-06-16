@@ -36,6 +36,9 @@ import { listTeamReports, readTeamBoard, setTeamBoardEntry } from './services/te
 import type { CliId } from './adapters/cli/types.js';
 import type { ConnectorDefinition } from './services/connector-store.js';
 import { hd2dAssetPath, hd2dStatus, startHd2dDownload } from './dashboard/hd2d-assets.js';
+import { readPlatformBinding } from './platform/binding.js';
+import { startPlatformTunnelClient } from './platform/tunnel-client.js';
+import { listMemberships } from './services/federation-membership-store.js';
 
 const SECRET_PATH = join(homedir(), '.botmux', '.dashboard-secret');
 const TOKEN_PATH = join(homedir(), '.botmux', '.dashboard-token');
@@ -1379,6 +1382,7 @@ listenWithProbe({
     logger.warn(`[dashboard] Failed to persist port to ${PORT_PATH}: ${(e as Error).message}`);
   }
   logger.info(`[dashboard] listening on ${config.dashboard.host}:${port}`);
+  startPlatformTunnelIfBound();
 }).catch((err) => {
   logger.error(`[dashboard] could not bind near ${config.dashboard.host}:${config.dashboard.port} after probing — set BOTMUX_DASHBOARD_PORT to a free port. ${(err as Error).message}`);
   process.exit(1);
@@ -1395,11 +1399,42 @@ const federationSync = setInterval(() => {
 }, 2 * 60 * 1000);
 federationSync.unref();
 
+// 中心化平台隧道（已绑定才启动；每台机器一个，跑在 dashboard 进程里）
+let platformTunnel: { stop(): void } | null = null;
+function readBotmuxVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(__dirname), 'package.json'), 'utf8'));
+    return pkg.version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+function startPlatformTunnelIfBound(): void {
+  try {
+    const binding = readPlatformBinding();
+    if (!binding) return;
+    const version = readBotmuxVersion();
+    platformTunnel = startPlatformTunnelClient({
+      binding,
+      getDashboardPort: () => boundDashboardPort,
+      getDashboardToken: () => activeToken,
+      getVersion: () => version,
+      getMemberships: () =>
+        listMemberships(config.session.dataDir).map((m) => ({ hubUrl: m.hubUrl, teamId: m.teamId, teamName: m.teamName })),
+      log: (msg, extra) => logger.info(`[platform-tunnel] ${msg}${extra ? ' ' + JSON.stringify(extra) : ''}`),
+    });
+    logger.info(`[platform-tunnel] 绑定到 ${binding.platformUrl}，启动隧道`);
+  } catch (e) {
+    logger.warn(`[platform-tunnel] 启动失败: ${(e as Error).message}`);
+  }
+}
+
 // Graceful shutdown
 function shutdown(): void {
   for (const off of subs.values()) off();
   subs.clear();
   registry.stop();
+  platformTunnel?.stop();
   server.close(() => process.exit(0));
   // Hard-exit fallback after 5s
   setTimeout(() => process.exit(0), 5_000).unref();
