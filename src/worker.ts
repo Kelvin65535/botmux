@@ -34,6 +34,7 @@ import {
 import { CodexBridgeQueue } from './services/codex-bridge-queue.js';
 import { drainCodexRollout, findCodexRolloutBySessionId, findCodexRolloutByPid, splitCodexEventsByCutoff, extractLastCodexTurn, type CodexBridgeEvent } from './services/codex-transcript.js';
 import { findTraexRolloutBySessionId, findTraexRolloutByPid } from './services/traex-transcript.js';
+import { prepareMirHome } from './services/mir-paths.js';
 import { cocoEventsPathForSession, drainCocoEvents, findCocoSessionByPid } from './services/coco-transcript.js';
 import { currentHermesStateOffset, drainHermesStateDb } from './services/hermes-transcript.js';
 import { currentMtrSessionOffset, drainMtrSession, findLatestMtrSessionByDirectory, findMtrSessionById, type MtrTranscriptSource } from './services/mtr-transcript.js';
@@ -3683,6 +3684,19 @@ function spawnCli(cfg: Extract<DaemonToWorker, { type: 'init' }>): void {
   // them past the server's global env.
   if (cliAdapter.spawnEnv) Object.assign(childEnv, cliAdapter.spawnEnv);
 
+  // Mir CLI: per-session MIRA_HOME isolation (see services/mir-paths.ts).
+  // mircli's interactive mode always prompts `恢复上次对话? [y/N]` when a
+  // last_conversation pointer exists — rendered BEFORE the `❯` input box, so
+  // botmux's first message would be typed into the prompt — and tracks the
+  // "last conversation" via a single global pointer that concurrent sessions of
+  // one bot would race. Giving each session a fresh home (seeded with a symlink
+  // to the shared ~/.mira/config.json auth, last_conversation cleared) sidesteps
+  // both; `--resume` then reopens that home's single conversation. MIRA_HOME
+  // must also be in BOTMUX_INJECTED_ENV_KEYS so the tmux backend forwards it.
+  if (cliAdapter.id === 'mir') {
+    childEnv.MIRA_HOME = prepareMirHome(cfg.sessionId);
+  }
+
   // ── File sandbox (oncall): wrap the CLI in bwrap so it can only touch a
   // per-session project copy + de-identified config. The agent's `botmux send`
   // routes through a daemon-side outbox watcher (creds never enter the sandbox).
@@ -4942,6 +4956,10 @@ process.on('message', async (raw: unknown) => {
     case 'close': {
       log('Close requested');
       stopScreenshotLoop();
+      // Let the adapter flush a lazily-persisted transcript before teardown
+      // (mircli only saves every 10 msgs / on /exit). Best-effort: never block
+      // the close on a throw.
+      if (backend) { try { await cliAdapter?.flushBeforeKill?.(backend as unknown as PtyHandle); } catch { /* best-effort */ } }
       // destroySession kills tmux session permanently; kill() only detaches
       backend?.destroySession?.();
       killCli();
@@ -4958,6 +4976,10 @@ process.on('message', async (raw: unknown) => {
       log('Suspend requested');
       stopScreenshotLoop();
       stopBridgeWatcher();
+      // Suspend resumes later via --resume, so a lazily-persisted CLI's
+      // transcript MUST be on disk first — flush before teardown (mircli only
+      // saves every 10 msgs / on /exit). Best-effort: never block on a throw.
+      if (backend) { try { await cliAdapter?.flushBeforeKill?.(backend as unknown as PtyHandle); } catch { /* best-effort */ } }
       // Free the CLI's memory, not just the worker's: destroySession kills the
       // backing tmux/herdr/zellij session AND the CLI process inside it (kill()
       // would only detach the pty viewer and leave the CLI running in the

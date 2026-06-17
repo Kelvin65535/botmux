@@ -128,6 +128,16 @@ export interface CliAdapter {
     recheck?: () => SubmitRecheckResult | Promise<SubmitRecheckResult>;
   }>;
 
+  /** Optional: a best-effort graceful step run just BEFORE the backend is torn
+   *  down on suspend/close. For CLIs that persist their transcript only on a
+   *  clean exit or at a coarse interval (mircli saves the conversation every 10
+   *  messages or on `/exit`), an abrupt kill would drop a short session's
+   *  history and break a later `--resume`. The adapter writes to the pane (e.g.
+   *  a `/save` command) and waits briefly for the flush. Must never throw — the
+   *  worker awaits it inside try/catch and proceeds to kill regardless. CLIs
+   *  whose transcript is written per-turn (claude/codex families) omit this. */
+  flushBeforeKill?(pty: PtyHandle): Promise<void>;
+
   /** Optional: absolute path (with ~ expansion handled by caller) to the CLI's
    *  skill directory.  When set, `ensureSkills` will write/refresh skill files
    *  into `{skillsDir}/<skillName>/SKILL.md`.  Undefined = this CLI does not
@@ -319,4 +329,4 @@ export interface CliAdapter {
   readonly defaultPassthroughCommands?: readonly string[];
 }
 
-export type CliId = 'claude-code' | 'seed' | 'relay' | 'aiden' | 'coco' | 'codex' | 'codex-app' | 'cursor' | 'gemini' | 'opencode' | 'antigravity' | 'mtr' | 'hermes' | 'mira' | 'traex' | 'pi' | 'copilot' | 'oh-my-pi';
+export type CliId = 'claude-code' | 'seed' | 'relay' | 'aiden' | 'coco' | 'codex' | 'codex-app' | 'cursor' | 'gemini' | 'opencode' | 'antigravity' | 'mtr' | 'hermes' | 'mira' | 'mir' | 'traex' | 'pi' | 'copilot' | 'oh-my-pi';

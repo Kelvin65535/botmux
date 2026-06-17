@@ -540,6 +540,10 @@ const BOTMUX_INJECTED_ENV_KEYS = [
   // wrapper。只有 cjadk 启动会被设上此值，其它 bot 不带 → 不进白名单 tmux pane 拿不到，
   // cjadk 就回到交互模式（本次 bug 的根因）。
   'CJADK_INTERACTIVE',
+  // Mir CLI 的每会话隔离数据根。worker 为 mir 注入指向 ~/.botmux/mir-homes/<sid>，
+  // 用来绕过 mircli 启动的「恢复上次对话? [y/N]」阻塞 + 隔离并发会话；不进白名单
+  // tmux pane 就拿不到，mircli 回到共享 ~/.mira 又会弹提示。见 services/mir-paths.ts。
+  'MIRA_HOME',
 ] as const;
 
 /**

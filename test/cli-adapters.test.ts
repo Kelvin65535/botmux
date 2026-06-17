@@ -30,6 +30,7 @@ import { createAntigravityAdapter } from '../src/adapters/cli/antigravity.js';
 import { createMtrAdapter, mtrSessionIdForBotmuxSession } from '../src/adapters/cli/mtr.js';
 import { createHermesAdapter } from '../src/adapters/cli/hermes.js';
 import { createMiraAdapter } from '../src/adapters/cli/mira.js';
+import { createMirAdapter } from '../src/adapters/cli/mir.js';
 import { createTraexAdapter } from '../src/adapters/cli/traex.js';
 import { createPiAdapter } from '../src/adapters/cli/pi.js';
 import { createCopilotAdapter } from '../src/adapters/cli/copilot.js';
@@ -40,7 +41,7 @@ import type { CliAdapter, CliId } from '../src/adapters/cli/types.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const ALL_CLI_IDS: CliId[] = ['claude-code', 'seed', 'aiden', 'coco', 'codex', 'codex-app', 'gemini', 'opencode', 'antigravity', 'mtr', 'hermes', 'mira', 'traex', 'pi', 'copilot', 'oh-my-pi'];
+const ALL_CLI_IDS: CliId[] = ['claude-code', 'seed', 'aiden', 'coco', 'codex', 'codex-app', 'gemini', 'opencode', 'antigravity', 'mtr', 'hermes', 'mira', 'mir', 'traex', 'pi', 'copilot', 'oh-my-pi'];
 
 // ---------------------------------------------------------------------------
 // 1. Factory: createCliAdapterSync
@@ -74,7 +75,7 @@ describe('createCliAdapterSync factory', () => {
 describe('lazy binary resolution', () => {
   // Adapters whose resolvedBin is the resolved CLI (codex-app/mira use
   // process.execPath and never probe, so they're excluded).
-  const PROBING_IDS: CliId[] = ['claude-code', 'seed', 'aiden', 'coco', 'codex', 'cursor', 'gemini', 'opencode', 'antigravity', 'mtr', 'hermes', 'traex', 'copilot'];
+  const PROBING_IDS: CliId[] = ['claude-code', 'seed', 'aiden', 'coco', 'codex', 'cursor', 'gemini', 'opencode', 'antigravity', 'mtr', 'hermes', 'traex', 'copilot', 'mir'];
 
   it.each(PROBING_IDS)('"%s": construction does not probe; first resolvedBin read does', async (id) => {
     const { spawnSync } = await import('node:child_process');
@@ -343,6 +344,59 @@ describe('mira buildArgs', () => {
     });
     expect(args).toContain('--mira-session-id');
     expect(args).toContain('mira-session-123');
+  });
+});
+
+describe('mir buildArgs', () => {
+  const adapter = createMirAdapter('/usr/bin/mircli');
+
+  it('fresh session passes --session-id and -y, no resume flag', () => {
+    const args = adapter.buildArgs({ sessionId: 'sess-mir', resume: false });
+    expect(args).toContain('--session-id');
+    expect(args).toContain('sess-mir');
+    expect(args).toContain('-y');
+    expect(args).not.toContain('--resume');
+  });
+
+  it('omits -y when bypass is disabled', () => {
+    const args = adapter.buildArgs({ sessionId: 'sess-mir', resume: false, disableCliBypass: true });
+    expect(args).not.toContain('-y');
+  });
+
+  it('ignores model (mircli has no --model flag)', () => {
+    const args = adapter.buildArgs({ sessionId: 'sess-mir', resume: false, model: 'opus4.6' });
+    expect(args).not.toContain('--model');
+    expect(args).not.toContain('opus4.6');
+  });
+
+  it('resume passes a no-arg --resume (isolated home holds one conversation)', () => {
+    const args = adapter.buildArgs({ sessionId: 'sess-mir', resume: true });
+    expect(args).toContain('--resume');
+    // No conversation id after --resume: the next token is --session-id.
+    const rIdx = args.indexOf('--resume');
+    expect(args[rIdx + 1]).toBe('--session-id');
+    expect(args).toContain('sess-mir');
+  });
+
+  it('has no portable copy-paste resume command (conversation lives in an isolated home)', () => {
+    expect(adapter.buildResumeCommand?.({ sessionId: 'sess-mir', cliSessionId: 'conv-abc' })).toBeNull();
+  });
+
+  it('readyPattern matches the ❯ input prompt', () => {
+    expect(adapter.readyPattern?.test('❯ ')).toBe(true);
+  });
+
+  it('flushBeforeKill sends /save + Enter so a short session persists', async () => {
+    const sent: string[] = [];
+    const keys: string[] = [];
+    const pty = {
+      write: () => {},
+      sendText: (t: string) => { sent.push(t); },
+      sendSpecialKeys: (...k: string[]) => { keys.push(...k); },
+    };
+    await adapter.flushBeforeKill?.(pty);
+    expect(sent).toContain('/save');
+    expect(keys).toContain('Enter');
   });
 });
 
