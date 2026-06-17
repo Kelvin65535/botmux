@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -55,13 +55,27 @@ function ensureSymlink(target: string, linkPath: string): void {
   // Only link when the real source exists; a missing config.json means the user
   // hasn't run `mircli login`, which mircli will surface itself.
   if (!existsSync(target)) return;
-  // existsSync follows symlinks: an existing, non-dangling link is left as-is.
-  if (existsSync(linkPath)) return;
+  // Inspect the existing entry with lstat (does NOT follow the link) so a stale
+  // home or a changed MIRA_HOME can't leave auth pointing at the wrong/old file:
+  //   - a correct, non-dangling link → keep;
+  //   - a link that's dangling or points elsewhere → unlink + recreate
+  //     (existsSync alone would follow the link, see a dangling one as "gone",
+  //      then symlinkSync would throw EEXIST and we'd silently keep the bad link);
+  //   - a real file/dir the user dropped in → leave it untouched.
+  let stat: ReturnType<typeof lstatSync> | undefined;
+  try { stat = lstatSync(linkPath); } catch { stat = undefined; }
+  if (stat) {
+    if (!stat.isSymbolicLink()) return; // real file/dir — respect it
+    let dest: string | undefined;
+    try { dest = readlinkSync(linkPath); } catch { dest = undefined; }
+    if (dest === target && existsSync(linkPath)) return; // correct + not dangling
+    try { rmSync(linkPath, { force: true }); } catch { /* will fail symlink below */ }
+  }
   try {
     symlinkSync(target, linkPath);
   } catch {
-    // Racing spawns of the same session, or a pre-existing dangling link — both
-    // benign; mircli reads through whatever is there.
+    // Racing spawns of the same session — benign; mircli reads through whatever
+    // landed.
   }
 }
 

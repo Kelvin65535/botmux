@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, lstatSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareMirHome, realMiraHome, sessionMiraHome } from '../src/services/mir-paths.js';
@@ -71,6 +71,43 @@ describe('mir-paths', () => {
     prepareMirHome('sess-3');
     expect(existsSync(conv)).toBe(true);
     expect(existsSync(join(home, 'last_conversation'))).toBe(false);
+  });
+
+  it('prepareMirHome repairs a dangling config.json symlink', () => {
+    seedSharedMira();
+    const home = sessionMiraHome('sess-dangle');
+    mkdirSync(home, { recursive: true });
+    // A leftover link pointing at a now-deleted old MIRA_HOME.
+    const stale = join(tempHome, 'old-mira', 'config.json');
+    symlinkSync(stale, join(home, 'config.json'));
+    expect(existsSync(join(home, 'config.json'))).toBe(false); // dangling
+    prepareMirHome('sess-dangle');
+    const link = join(home, 'config.json');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(link)).toBe(join(tempHome, '.mira', 'config.json'));
+    expect(readFileSync(link, 'utf-8')).toContain('cookies');
+  });
+
+  it('prepareMirHome rewrites a symlink that points at the wrong target', () => {
+    seedSharedMira();
+    const home = sessionMiraHome('sess-wrong');
+    mkdirSync(home, { recursive: true });
+    const otherReal = join(tempHome, 'other-mira');
+    mkdirSync(otherReal, { recursive: true });
+    writeFileSync(join(otherReal, 'config.json'), '{"cookies":"STALE"}', 'utf-8');
+    symlinkSync(join(otherReal, 'config.json'), join(home, 'config.json'));
+    prepareMirHome('sess-wrong');
+    expect(readlinkSync(join(home, 'config.json'))).toBe(join(tempHome, '.mira', 'config.json'));
+  });
+
+  it('prepareMirHome leaves a real (non-symlink) config.json untouched', () => {
+    seedSharedMira();
+    const home = sessionMiraHome('sess-realfile');
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, 'config.json'), '{"cookies":"USERPROVIDED"}', 'utf-8');
+    prepareMirHome('sess-realfile');
+    expect(lstatSync(join(home, 'config.json')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(home, 'config.json'), 'utf-8')).toContain('USERPROVIDED');
   });
 
   it('prepareMirHome skips the symlink when shared auth is absent (no crash)', () => {

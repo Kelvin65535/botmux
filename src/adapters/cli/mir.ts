@@ -117,9 +117,12 @@ export function createMirAdapter(pathOverride?: string): CliAdapter {
     readyPattern: /❯/,
     systemHints: BOTMUX_SHELL_HINTS,
     altScreen: false,
-    // mircli reads personal skills from `<MIRA_HOME>/skills/<key>/SKILL.md`
-    // (alongside .agent/.trae/.coco/.claude). Installed skills only fire when
-    // the MCP bridge is connected, but writing them is harmless either way.
+    // mircli scans personal skills from `Path.home()/.mira/skills/<key>/SKILL.md`
+    // — keyed off $HOME, NOT MIRA_HOME (verified in mircli.py's user-skill
+    // loader: `home = Path.home(); home/<tool>/skills`). So the per-session
+    // MIRA_HOME redirect does NOT move the skill dir, and this static path is
+    // where ensureCliSkills writes AND where mircli reads. (Installed skills only
+    // fire when the MCP bridge is connected, but writing them is harmless.)
     skillsDir: '~/.mira/skills',
     // No per-spawn --model flag (model is a global file); leave modelChoices
     // undefined so setup skips the model prompt for this CLI.

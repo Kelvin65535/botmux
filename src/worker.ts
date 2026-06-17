@@ -4883,6 +4883,10 @@ process.on('message', async (raw: unknown) => {
       // process would never actually restart. destroySession() tears the session
       // down so the respawn starts a fresh CLI. (PTY has no destroySession, so
       // the ?. no-ops and killCli()'s kill() does the teardown.)
+      // Restart respawns with --resume, so flush a lazily-persisted CLI (mircli
+      // saves every 10 msgs / on /exit) first — otherwise a short session's
+      // unsaved history is killed and the resume comes back without it.
+      if (backend) { try { await cliAdapter?.flushBeforeKill?.(backend as unknown as PtyHandle); } catch { /* best-effort */ } }
       backend?.destroySession?.();
       killCli();
       awaitingFirstPrompt = true;
