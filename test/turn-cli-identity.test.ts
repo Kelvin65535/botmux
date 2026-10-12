@@ -431,6 +431,7 @@ describe('target daemon consumes signed message authority', () => {
       trustedCallerForScheduledTask,
       scheduleStore: { effectiveScheduleChatIds: (task: any) => task.chatIds ?? [task.chatId] },
       getDashboardAdminOpenIds: () => [ALICE],
+      canOperate: vi.fn((_appId: string, _chatId: string, openId?: string) => openId === ALICE),
       scheduleAuthorityStore: undefined as any,
     };
     const handlers = new Function('scope', 'with (scope) { ' + code
@@ -558,6 +559,17 @@ describe('target daemon consumes signed message authority', () => {
     await h.run(firstScheduledTurn);
     expect(readFileSync(sessionIdentityPath(dir, SESSION, 'bytedcli'), 'utf8'))
       .toContain("BOTMUX_IDENTITY_MODE='denied'");
+  });
+
+  it('honors open-mode schedule creators without requiring dashboard admin membership', async () => {
+    const h = await targetHarness();
+    directSchedule(h);
+    h.scopeValues.getDashboardAdminOpenIds = () => [];
+    h.scopeValues.canOperate.mockReturnValue(true);
+    bytedcliJwts.set(ALICE, { cloudJwt: 'open-mode-alice' });
+    await h.run(firstScheduledTurn);
+    expect(h.scopeValues.canOperate).toHaveBeenCalledWith(APP, 'oc_chat', ALICE, 'on_alice');
+    expect(readFileSync(sessionIdentityPath(dir, SESSION, 'bytedcli'), 'utf8')).toContain('open-mode-alice');
   });
 
   it('prepares restored completed one-shot turns without allowing paused tasks', async () => {

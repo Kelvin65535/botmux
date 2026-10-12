@@ -3979,7 +3979,7 @@ async function prepareScheduledTurnCliIdentity(ds: DaemonSession, turnId: string
   // was removed receive a denial, even if this session once held valid tokens.
   const senderOpenId = caller?.requestLarkAppId === ds.larkAppId
     && caller.requestUserOpenId
-    && getDashboardAdminOpenIds(ds.larkAppId).includes(caller.requestUserOpenId)
+    && canOperate(ds.larkAppId, ds.chatId, caller.requestUserOpenId, caller.requestUserUnionId)
     ? caller.requestUserOpenId : undefined;
   await publishTurnCliIdentity({
     botConfig: getBot(ds.larkAppId).config,
